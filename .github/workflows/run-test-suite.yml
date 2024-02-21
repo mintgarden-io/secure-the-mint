@@ -1,0 +1,35 @@
+name: Run Test Suite
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+        - '**'
+  pull_request:
+    branches:
+      - '**'
+
+jobs:
+  build:
+    name: All tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+
+    - name: Setup Python environment
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9
+
+    - name: Test code with pytest
+      run: |
+        python3 -m venv venv
+        . ./venv/bin/activate
+        pip install .[dev]
+        ./venv/bin/pytest tests/ -s -v --durations 0

@@ -1,0 +1,17 @@
+; This puzzle is meant to be inside the NFT and can only be spent if it is part of an offer that pays the payments curried in
+(mod (OFFER_MOD_HASH PAYMENTS TRADE_PRICES my_id)
+  (include condition_codes.clib)
+  (include curry-and-treehash.clib)
+
+
+  (defun-inline notarize_payments (nonce PAYMENTS)
+    (sha256tree (c nonce PAYMENTS ))
+  )
+
+  (list
+    (list ASSERT_MY_COIN_ID my_id)
+    (list CREATE_COIN OFFER_MOD_HASH 1 (list OFFER_MOD_HASH))
+    (list ASSERT_PUZZLE_ANNOUNCEMENT (sha256 OFFER_MOD_HASH (notarize_payments my_id PAYMENTS)))
+    (list -10 () TRADE_PRICES ())
+   )
+)

@@ -1,0 +1,7 @@
+(mod (TARGET_PUZZLE_HASH)
+  (include condition_codes.clib)
+
+  (list
+    (list CREATE_COIN TARGET_PUZZLE_HASH 1 (list TARGET_PUZZLE_HASH))
+   )
+)

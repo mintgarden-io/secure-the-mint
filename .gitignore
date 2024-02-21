@@ -1,0 +1,7 @@
+venv
+.eggs
+__pycache__
+main.sym
+build
+.vscode
+.idea

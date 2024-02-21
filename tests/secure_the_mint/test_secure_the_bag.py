@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from typing import Optional
+from clvm_tools.binutils import disassemble
 
 import pytest
+from blspy import G2Element
 from chia.types.blockchain_format.program import Program, INFINITE_COST
 from chia.types.blockchain_format.sized_bytes import bytes32
+from chia.types.spend_bundle import SpendBundle
 from chia.types.condition_opcodes import ConditionOpcode
 from chia.util.hash import std_hash
 from chia.util.ints import uint64, uint16
@@ -401,12 +404,19 @@ def test_read_secure_the_bag_targets(requested_mojos: Optional[int]) -> None:
     assert pre_launcher_spend.coin.amount == 1
     if requested_mojos:
         assert bytes32(pre_launcher_spend.coin.puzzle_hash) == bytes32.fromhex(
-            "a285f08f62b2cd3fb316985d9ab7bc5e3e72a936cab1142d10e6f0928fa80b53"
+            "455ce2a6ea837ba124548e574475430edfce0a9add8a087fd7a6a1e593950b58"
         )
     else:
         assert bytes32(pre_launcher_spend.coin.puzzle_hash) == bytes32.fromhex(
-            "ee0337177546718dc63a12302ef78eb00732459a52e12d666e56b4db258c4387"
+            "36d16c1fee484220fb22dc45c1ebed3195ee577dcfdb61dd98f99579146cb4cf"
         )
+    #
+    # print(
+    #     SpendBundle(
+    #         coin_spends=coin_spends_0, aggregated_signature=G2Element()
+    #     ).to_json_dict()
+    # )
+
 
     assert targets[0].puzzle_hash == pre_launcher_spend.coin.puzzle_hash
     assert targets[0].amount == pre_launcher_spend.coin.amount
@@ -425,34 +435,19 @@ def test_read_secure_the_bag_targets(requested_mojos: Optional[int]) -> None:
     )
     assert pre_launcher_conditions.first().first() == ConditionOpcode.ASSERT_MY_COIN_ID
 
-    # pre launcher asserts eve coin announcement
+    # pre launcher asserts launcher coin announcement
     assert (
         pre_launcher_conditions.rest().rest().first().first()
-        == ConditionOpcode.ASSERT_PUZZLE_ANNOUNCEMENT
+        == ConditionOpcode.ASSERT_COIN_ANNOUNCEMENT
     )
+    announcement_message = Program.to([eve_spend.coin.puzzle_hash, 1, []]).get_tree_hash()
     assert pre_launcher_conditions.rest().rest().first().rest().first() == std_hash(
-        eve_spend.coin.puzzle_hash + pre_launcher_spend.coin.name()
+        launcher_spend.coin.name() + announcement_message
     )
 
     _, eve_spend_conditions = eve_spend.puzzle_reveal.run_with_cost(
         INFINITE_COST, eve_spend.solution
     )
-
-    # eve coin announces pre_launcher_coin
-    assert (
-        eve_spend_conditions.rest().rest().first().first()
-        == ConditionOpcode.CREATE_PUZZLE_ANNOUNCEMENT
-    )
-    assert (
-        eve_spend_conditions.rest().rest().first().rest().first()
-        == pre_launcher_spend.coin.name()
-    )
-
-    # print(
-    #     SpendBundle(
-    #         coin_spends=coin_spends_0, aggregated_signature=G2Element()
-    #     ).to_json_dict()
-    # )
 
     if requested_mojos:
         offer = mint_spend_0.to_offer(pre_launcher_parent_id)
@@ -462,8 +457,9 @@ def test_read_secure_the_bag_targets(requested_mojos: Optional[int]) -> None:
 
         # eve coin asserts offer condition
         assert_puzzle_condition = (
-            eve_spend_conditions.rest().rest().rest().rest().first()
+            eve_spend_conditions.rest().rest().rest().first()
         )
+
         assert (
             assert_puzzle_condition.first()
             == ConditionOpcode.ASSERT_PUZZLE_ANNOUNCEMENT

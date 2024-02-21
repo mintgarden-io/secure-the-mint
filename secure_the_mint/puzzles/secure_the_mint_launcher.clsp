@@ -75,21 +75,26 @@
     (list ; mint
       (list ASSERT_MY_COIN_ID my_id)
       (list CREATE_COIN SINGLETON_LAUNCHER_PUZHASH 1)
-      (list ASSERT_PUZZLE_ANNOUNCEMENT
+      (list ASSERT_COIN_ANNOUNCEMENT
         (sha256
-          (calculate_full_puzzle_hash
-            (c SINGLETON_MOD_HASH (c (calculate_coin_id my_id SINGLETON_LAUNCHER_PUZHASH 1) SINGLETON_LAUNCHER_PUZHASH))
-            NFT_STATE_LAYER_MOD_HASH METADATA_HASH METADATA_UPDATER_PUZZLE_HASH
-            NFT_OWNERSHIP_LAYER_MOD_HASH
-            NFT_OWNERSHIP_TRANSFER_PROGRAM_MOD_HASH ROYALTY_ADDRESS TRADE_PRICE_PERCENTAGE
-            P2_PUZZLE_HASH
+          (calculate_coin_id my_id SINGLETON_LAUNCHER_PUZHASH 1)
+          (sha256tree
+            (list
+              (calculate_full_puzzle_hash
+                (c SINGLETON_MOD_HASH (c (calculate_coin_id my_id SINGLETON_LAUNCHER_PUZHASH 1) SINGLETON_LAUNCHER_PUZHASH))
+                NFT_STATE_LAYER_MOD_HASH METADATA_HASH METADATA_UPDATER_PUZZLE_HASH
+                NFT_OWNERSHIP_LAYER_MOD_HASH
+                NFT_OWNERSHIP_TRANSFER_PROGRAM_MOD_HASH ROYALTY_ADDRESS TRADE_PRICE_PERCENTAGE
+                P2_PUZZLE_HASH
+              )
+              1
+              ()
+            )
           )
-          my_id
         )
       )
     )
     (list ; melt
-      (list ASSERT_MY_COIN_ID my_id)
       (list AGG_SIG_ME MELT_PUBLIC_KEY 1)
     )
   )

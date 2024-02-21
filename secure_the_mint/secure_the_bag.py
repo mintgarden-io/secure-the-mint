@@ -152,7 +152,7 @@ class MintSpends:
         )
 
         eve_coin = Coin(launcher_coin.name(), eve_puzzle.get_tree_hash(), amount)
-        innersol = Program.to([pre_launcher_coin.name(), [eve_coin.name()]])
+        innersol = Program.to([eve_coin.name()])
         ownership_layer_solution = Program.to([innersol])  # supports DID
         nft_layer_solution = Program.to([ownership_layer_solution])
         singleton_solution = Program.to(
@@ -338,14 +338,13 @@ def read_secure_the_bag_targets(
             trade_prices = Program.to(
                 [[p.amount, OFFER_MOD_HASH] for p in requested_payments[None]]
             )
-            eve_delegated_puzzle = OFFER_DELEGATE.curry(
+            p2_puzzle = OFFER_DELEGATE.curry(
                 OFFER_MOD_HASH, payments, trade_prices
             )
         else:
             requested_payments = None
-            eve_delegated_puzzle = DIRECT_DELEGATE.curry(target_puzzle_hash)
+            p2_puzzle = DIRECT_DELEGATE.curry(target_puzzle_hash)
 
-        p2_puzzle = SECURE_P2_DELEGATE.curry(eve_delegated_puzzle)
         pre_launcher_puzzle = PRE_LAUNCHER_MOD.curry(
             SINGLETON_MOD_HASH,
             LAUNCHER_PUZZLE_HASH,

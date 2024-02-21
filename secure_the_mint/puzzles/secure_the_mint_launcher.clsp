@@ -90,7 +90,7 @@
     )
     (list ; melt
       (list ASSERT_MY_COIN_ID my_id)
-      (list AGG_SIG_ME MELT_PUBLIC_KEY my_id)
+      (list AGG_SIG_ME MELT_PUBLIC_KEY 1)
     )
   )
 )

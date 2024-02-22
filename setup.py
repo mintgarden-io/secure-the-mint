@@ -23,8 +23,8 @@ setup(
     packages=find_packages(exclude=("tests",)),
     entry_points={
         "console_scripts": [
-            "secure_the_bag = secure_the_mint.secure_the_bag:main",
-            "unwind_the_bag = secure_the_mint.unwind_the_bag:main"
+            "secure_the_mint = secure_the_mint.secure_the_mint:main",
+            "unwind_the_mint = secure_the_mint.unwind_the_mint:main"
         ],
     },
     author_email="andreas@mintgarden.io",

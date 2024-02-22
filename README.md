@@ -46,13 +46,15 @@ Both the minting and the payment spends can now be bundled into an offer file th
 
 ![Secure the mint offer diagram](.github/images/secure_the_mint_offer.svg)
 
+This project is based on the secure_the_bag code in the [CAT admin tool](https://github.com/Chia-Network/CAT-admin-tool).
+
 ### Technical details
 
 The tricky thing when precommitting singletons is that singleton launchers are inherently insecure, so they have to be protected by asserting the singleton eve spend in the spend that creates the launcher.
 
 But this requires one to know the launcher ID of the singleton, which is not known yet if you only precompute puzzle hashes.
 
-With the help of trepca, I came up with a[Pre-Launcher puzzle](secure_the_mint/puzzles/secure_the_mint_launcher.clsp) that computes those assertions based on its own ID, which is passed in as the solution.
+With the help of trepca, I came up with a [Pre-Launcher puzzle](secure_the_mint/puzzles/secure_the_mint_launcher.clsp) that computes those assertions based on its own ID, which is passed in as the solution.
 
 As for the NFT itself, the inner puzzle can be anything. However, since the eve spend has to be asserted by the pre-launcher, I'm using a special [p2_conditions puzzle](secure_the_mint/puzzles/secure_the_mint_p2_conditions.clsp) that creates this assertion and adds it to the other conditions.
 
@@ -67,11 +69,14 @@ To keep things simple, the pre-launcher only has two modes. It can either mint t
 
 I thought about allowing the creator to modify the NFT afterwards, but that's probably not worth the effort, since the creator can always commit new NFTs to chain and melt the old ones.
 
-### The root coin has an amount of 0, but its children have higher amounts
+#### The root coin has an amount of 0, but its children have higher amounts
 
 This decision was to ensure the root coin can always be created by the DID coin. Since the DID coin is a singleton, additional coins created by it have to be even values. So it would not be possible to mint collections with uneven number of NFTs.
 
 So I decided that the person unrolling the bundle has to fund the missing mojos (1 per NFT) when unrolling the root coin.
+
+However, not all wallets are able to do such a spend at the moment. 
+The Chia wallet doesn't allow you to leave value on the table, to be captured by another coin (in this case the root coin of the tree).
 
 Install
 -------
@@ -105,8 +110,8 @@ Lastly this requires a synced, running light wallet
 Verify the installation was successful
 
 ```
-secure_the_bag --help
-unwind_the_bag --help
+secure_the_mint --help
+unwind_the_mint --help
 ```
 
 Usage
@@ -114,7 +119,7 @@ Usage
 
 **WARNING: THIS PROJECT HAS NOT BEEN REVIEWED YET. USE AT YOUR OWN RISK**
 
-### Securing the Bag
+### Securing the Mint
 
 Prepare a `metadata.csv` file containing the NFT metadata.
 It shares the format with the [Chia NFT bulk minting tool](https://docs.chia.net/guides/nft-bulk-mint/), you can find an
@@ -122,14 +127,14 @@ example under [tests/secure_the_mint/metadata.csv](tests/secure_the_mint/metadat
 
 Compute the root coin puzzle by running
 ```shell
-$ secure_the_bag --metadata metadata.csv -leaf-width 100
+$ secure_the_mint --metadata metadata.csv -leaf-width 100
 
 Secure the bag root amount: 100 mojos
 Secure the bag root address: xch1ylq696pt5mlnu9msvsshfvrpcz8vr5r8ekpk7thw56g3n2rraxgqzcta5x
 ```
 This will give you a root puzzle hash of your NFT tree.
 
-### Committing the Bag
+### Committing the Mint
 
 Get the inner address of your DID
 ```shell
@@ -142,7 +147,7 @@ Spend your DID and create the root coin
 chia rpc wallet did_transfer_did '{"wallet_id": 2, "inner_address": "xch17vvgz7g8xe3wkf5rk7gmyhgamxc4ja0r4htndrwqe5hdd523qzyqzwwtnz", "fee": 1000000000, "with_recovery_info": true, "extra
 _conditions": [{"opcode": 51, "args": {"puzzle_hash": "27c1a2e82ba6ff3e1770642174b061c08ec1d067cd836f2eeea69119a863e990", "amount": 0}}]}'
 ```
-### Unwinding the Bag
+### Unwinding the Mint
 
 **This is currently not possible with the Chia reference wallet, since it doesn't allow leaving mojos on the table to be captured by other coins.**
 
@@ -150,7 +155,7 @@ Get the spent DID coin ID:
 ```
 $ cdv rpc coinrecords --by puzzlehash 27c1a2e82ba6ff3e1770642174b061c08ec1d067cd836f2eeea69119a863e990 -nd
 ```
-Unwind the bag
+Unwind the mint
 ```shell
-$ unwind_the_bag --metadata metadata.csv --leaf-width 100 --wallet-id 1 --did-coin-id 6d720d9c49f592ea38230ed7e02cb274ecb07f791d937d060c19c27d1d6d27bf --fingerprint 1105744144
+$ unwind_the_mint --metadata metadata.csv --leaf-width 100 --wallet-id 1 --did-coin-id 6d720d9c49f592ea38230ed7e02cb274ecb07f791d937d060c19c27d1d6d27bf --fingerprint 1105744144
 ```

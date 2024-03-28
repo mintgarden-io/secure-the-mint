@@ -20,6 +20,8 @@ from secure_the_mint.secure_the_mint import (
     parent_of_puzzle_hash,
     read_secure_the_bag_targets,
     secure_the_bag,
+    create_dynamic_launcher_targets,
+    DynamicMintSpends,
 )
 
 
@@ -478,45 +480,41 @@ def test_dynamic_read_secure_the_bag_targets() -> None:
     target_puzzle_hash = bytes32.fromhex(
         "4bc6435b409bcbabe53870dae0f03755f6aabb4594c5915ec983acf12a5d1fba"
     )
-    melt_public_key = bytes32.fromhex(
+    creator_public_key = bytes32.fromhex(
         "4bc6435b409bcbabe53870dae0f03755f6aabb4594c5915ec983acf12a5d1fba"
     )
-    targets, mint_spends = read_secure_the_bag_targets(
+    targets, mint_spends = create_dynamic_launcher_targets(creator_public_key, 3)
+
+    updated_targets, updated_mint_spends = read_secure_the_bag_targets(
         "./tests/secure_the_mint/metadata.csv",
         target_puzzle_hash,
         target_puzzle_hash,
         uint16(5 * 100),
-        melt_public_key,
+        creator_public_key,
         requested_mojos,
-        allow_update_on_mint=True,
-    )
-
-    updated_targets, updated_mint_spends = read_secure_the_bag_targets(
-        "./tests/secure_the_mint/metadata_updated.csv",
-        target_puzzle_hash,
-        target_puzzle_hash,
-        uint16(5 * 100),
-        melt_public_key,
-        requested_mojos,
-        allow_update_on_mint=True,
     )
 
     assert len(targets) == 3
-    assert len(mint_spends) == 3
 
     pre_launcher_parent_id = bytes32.fromhex(
         "f3153d27c1d14581971203f10082fa2db2fbc0fd786a9b210e43f227eca499b5"
     )
 
     mint_spend_0 = mint_spends.get(targets[0].puzzle_hash)
-    updated_metadata = updated_mint_spends[updated_targets[0].puzzle_hash].metadata
-    coin_spends_0 = mint_spend_0.to_coin_spends(pre_launcher_parent_id, updated_metadata)
+    updated_mint_spend_0 = updated_mint_spends[updated_targets[0].puzzle_hash]
+    coin_spends_0 = mint_spend_0.to_coin_spends(
+        pre_launcher_parent_id,
+        updated_mint_spend_0.metadata,
+        updated_mint_spend_0.royalty_percentage,
+        updated_mint_spend_0.royalty_puzzle_hash,
+        updated_mint_spend_0.eve_p2_puzzle,
+    )
     pre_launcher_spend = coin_spends_0[0]
     assert pre_launcher_spend.coin.parent_coin_info == pre_launcher_parent_id
     assert pre_launcher_spend.coin.amount == 1
     if requested_mojos:
         assert bytes32(pre_launcher_spend.coin.puzzle_hash) == bytes32.fromhex(
-            "b8d65b74b86cb863dc97aed08f65a7bff8666614fd02b08053a6bebc88ff6c79"
+            "cefcec774cba59261a670071285ae7ee14f3f10c69988e2b001434dc686c87c7"
         )
     else:
         assert bytes32(pre_launcher_spend.coin.puzzle_hash) == bytes32.fromhex(
@@ -542,7 +540,7 @@ def test_dynamic_read_secure_the_bag_targets() -> None:
     assert eve_spend.coin.amount == 1
 
     uncurried_nft = UncurriedNFT.uncurry(*eve_spend.puzzle_reveal.uncurry())
-    assert uncurried_nft.metadata == updated_mint_spends[updated_targets[0].puzzle_hash].metadata
+    assert uncurried_nft.metadata == updated_mint_spend_0.metadata
 
     _, pre_launcher_conditions = pre_launcher_spend.puzzle_reveal.run_with_cost(
         INFINITE_COST, pre_launcher_spend.solution
@@ -566,7 +564,14 @@ def test_dynamic_read_secure_the_bag_targets() -> None:
     )
 
     if requested_mojos:
-        offer = mint_spend_0.to_offer(pre_launcher_parent_id, updated_metadata)
+        offer = mint_spend_0.to_offer(
+            pre_launcher_parent_id,
+            updated_mint_spend_0.metadata,
+            updated_mint_spend_0.royalty_percentage,
+            updated_mint_spend_0.royalty_puzzle_hash,
+            updated_mint_spend_0.eve_p2_puzzle,
+            updated_mint_spend_0.requested_payments,
+        )
         assert len(offer.requested_payments[None]) == 1
         assert offer.requested_payments[None][0].amount == requested_mojos
         assert offer.requested_payments[None][0].puzzle_hash == target_puzzle_hash

@@ -119,11 +119,10 @@ class MintSpends:
         self,
         launcher_coin: Coin,
         p2_puzzle: Program,
-        updated_metadata: Optional[Program] = None,
     ) -> Program:
         return nft_puzzles.create_full_puzzle(
             launcher_coin.name(),
-            updated_metadata or self.metadata,
+            self.metadata,
             NFT_METADATA_UPDATER.get_tree_hash(),
             create_ownership_layer_puzzle(
                 launcher_coin.name(),
@@ -137,7 +136,113 @@ class MintSpends:
     def to_coin_spends(
         self,
         pre_launcher_parent_id: bytes32,
-        updated_metadata: Optional[Program] = None,
+    ) -> List[CoinSpend]:
+        amount = uint64(1)
+        pre_launcher_coin = Coin(
+            pre_launcher_parent_id, self.pre_launcher_puzzle.get_tree_hash(), amount
+        )
+        mode = 1  # 1 for mint, 0 for melt
+        pre_launcher_solution = Program.to(([mode, pre_launcher_coin.name()]))
+        pre_launcher_spend = CoinSpend(
+            pre_launcher_coin,
+            self.pre_launcher_puzzle,
+            pre_launcher_solution,
+        )
+        launcher_coin = Coin(
+            pre_launcher_coin.name(), SINGLETON_LAUNCHER_PUZZLE_HASH, amount
+        )
+        eve_puzzle = self.get_nft_puzzle(launcher_coin, self.eve_p2_puzzle)
+
+        launcher_solution = Program.to([eve_puzzle.get_tree_hash(), amount, []])
+        launcher_spend = CoinSpend(
+            launcher_coin, SINGLETON_LAUNCHER_PUZZLE, launcher_solution
+        )
+
+        eve_coin = Coin(launcher_coin.name(), eve_puzzle.get_tree_hash(), amount)
+        innersol = Program.to([eve_coin.name()])
+        ownership_layer_solution = Program.to([innersol])  # supports DID
+        nft_layer_solution = Program.to([ownership_layer_solution])
+        singleton_solution = Program.to(
+            [
+                [launcher_coin.parent_coin_info, uint64(launcher_coin.amount)],
+                amount,
+                nft_layer_solution,
+            ]
+        )
+
+        eve_spend = CoinSpend(eve_coin, eve_puzzle, singleton_solution)
+
+        return [pre_launcher_spend, launcher_spend, eve_spend]
+
+    def to_offer(
+        self,
+        pre_launcher_parent_id: bytes32,
+    ) -> Offer:
+        if self.requested_payments is None:
+            raise Exception("This target does not request a payment")
+
+        coin_spends = self.to_coin_spends(pre_launcher_parent_id)
+
+        launcher_coin = coin_spends[1].coin
+        eve_coin = coin_spends[2].coin
+        notarized_payments: Dict[Optional[bytes32], List[NotarizedPayment]] = {}
+        for asset_id, payments in self.requested_payments.items():
+            assert not asset_id  # Only XCH payments for now
+            notarized_payments[asset_id] = []
+            for p in payments:
+                puzzle_hash, amount, memos = tuple(p.as_condition_args())
+                notarized_payments[asset_id].append(
+                    NotarizedPayment(puzzle_hash, amount, memos, eve_coin.name())
+                )
+
+        bundle = SpendBundle(coin_spends, G2Element())
+        puzzle_info: Optional[PuzzleInfo] = match_puzzle(
+            uncurry_puzzle(coin_spends[2].puzzle_reveal)
+        )
+        offer = Offer(notarized_payments, bundle, {launcher_coin.name(): puzzle_info})
+        return offer
+
+
+class DynamicMintSpends:
+    pre_launcher_puzzle: Program
+    creator_puzzle_hash: bytes32
+
+    def __init__(
+        self,
+        pre_launcher_puzzle: Program,
+        creator_puzzle_hash: bytes32,
+    ) -> None:
+        self.pre_launcher_puzzle = pre_launcher_puzzle
+        self.creator_puzzle_hash = creator_puzzle_hash
+
+    def get_nft_puzzle(
+        self,
+        launcher_coin: Coin,
+        metadata: Program,
+        royalty_percentage: uint16,
+        royalty_puzzle_hash: bytes32,
+        p2_puzzle: Program,
+    ) -> Program:
+        return nft_puzzles.create_full_puzzle(
+            launcher_coin.name(),
+            metadata,
+            NFT_METADATA_UPDATER.get_tree_hash(),
+            create_ownership_layer_puzzle(
+                launcher_coin.name(),
+                b"",
+                p2_puzzle,
+                royalty_percentage,
+                royalty_puzzle_hash=royalty_puzzle_hash,
+            ),
+        )
+
+    def to_coin_spends(
+        self,
+        pre_launcher_parent_id: bytes32,
+        metadata: Program,
+        royalty_percentage_times_100: uint16,
+        royalty_puzzle_hash: bytes32,
+        p2_puzzle: Program,
     ) -> List[CoinSpend]:
         amount = uint64(1)
         pre_launcher_coin = Coin(
@@ -146,8 +251,14 @@ class MintSpends:
         mode = 1  # 1 for mint, 0 for melt
         pre_launcher_solution = Program.to(
             (
-                [mode, pre_launcher_coin.name()]
-                + ([updated_metadata.get_tree_hash()] if updated_metadata else [])
+                [
+                    mode,
+                    pre_launcher_coin.name(),
+                    metadata.get_tree_hash(),
+                    royalty_puzzle_hash,
+                    royalty_percentage_times_100,
+                    p2_puzzle.get_tree_hash(),
+                ]
             )
         )
         pre_launcher_spend = CoinSpend(
@@ -159,7 +270,11 @@ class MintSpends:
             pre_launcher_coin.name(), SINGLETON_LAUNCHER_PUZZLE_HASH, amount
         )
         eve_puzzle = self.get_nft_puzzle(
-            launcher_coin, self.eve_p2_puzzle, updated_metadata
+            launcher_coin,
+            metadata,
+            royalty_percentage_times_100,
+            royalty_puzzle_hash,
+            p2_puzzle,
         )
 
         launcher_solution = Program.to([eve_puzzle.get_tree_hash(), amount, []])
@@ -186,18 +301,24 @@ class MintSpends:
     def to_offer(
         self,
         pre_launcher_parent_id: bytes32,
-        updated_metadata: Optional[Program] = None,
-        creator_signature: Optional[G2Element] = None,
+        metadata: Program,
+        royalty_percentage_times_100: uint16,
+        royalty_puzzle_hash: bytes32,
+        p2_puzzle: Program,
+        requested_payments: Dict[Optional[bytes32], List[Payment]],
     ) -> Offer:
-        if self.requested_payments is None:
-            raise Exception("This target does not request a payment")
-
-        coin_spends = self.to_coin_spends(pre_launcher_parent_id, updated_metadata)
+        coin_spends = self.to_coin_spends(
+            pre_launcher_parent_id,
+            metadata,
+            royalty_percentage_times_100,
+            royalty_puzzle_hash,
+            p2_puzzle,
+        )
 
         launcher_coin = coin_spends[1].coin
         eve_coin = coin_spends[2].coin
         notarized_payments: Dict[Optional[bytes32], List[NotarizedPayment]] = {}
-        for asset_id, payments in self.requested_payments.items():
+        for asset_id, payments in requested_payments.items():
             assert not asset_id  # Only XCH payments for now
             notarized_payments[asset_id] = []
             for p in payments:
@@ -206,7 +327,7 @@ class MintSpends:
                     NotarizedPayment(puzzle_hash, amount, memos, eve_coin.name())
                 )
 
-        bundle = SpendBundle(coin_spends, creator_signature or G2Element())
+        bundle = SpendBundle(coin_spends, G2Element())
         puzzle_info: Optional[PuzzleInfo] = match_puzzle(
             uncurry_puzzle(coin_spends[2].puzzle_reveal)
         )
@@ -316,7 +437,6 @@ def read_secure_the_bag_targets(
     royalty_percentage_times_100: uint16,
     creator_public_key: Optional[bytes32] = None,
     requested_mojos: Optional[uint64] = None,
-    allow_update_on_mint: bool = False,
 ) -> Tuple[List[Target], Dict[bytes32, MintSpends]]:
     targets: List[Target] = []
     mint_spends: Dict[bytes32, MintSpends] = {}
@@ -362,10 +482,7 @@ def read_secure_the_bag_targets(
             requested_payments = None
             p2_puzzle = DIRECT_DELEGATE.curry(target_puzzle_hash)
 
-        pre_launcher_mod = (
-            DYNAMIC_PRE_LAUNCHER_MOD if allow_update_on_mint else PRE_LAUNCHER_MOD
-        )
-        pre_launcher_puzzle = pre_launcher_mod.curry(
+        pre_launcher_puzzle = PRE_LAUNCHER_MOD.curry(
             SINGLETON_MOD_HASH,
             LAUNCHER_PUZZLE_HASH,
             NFT_STATE_LAYER_MOD_HASH,
@@ -387,6 +504,33 @@ def read_secure_the_bag_targets(
             royalty_percentage_times_100,
             royalty_puzzle_hash,
             requested_payments,
+        )
+
+    return targets, mint_spends
+
+
+def create_dynamic_launcher_targets(
+    creator_public_key: bytes32,
+    count: int,
+) -> Tuple[List[Target], Dict[bytes32, DynamicMintSpends]]:
+    mint_spends: Dict[bytes32, DynamicMintSpends] = {}
+    targets: List[Target] = []
+
+    for i in range(count):
+        pre_launcher_puzzle = DYNAMIC_PRE_LAUNCHER_MOD.curry(
+            SINGLETON_MOD_HASH,
+            LAUNCHER_PUZZLE_HASH,
+            NFT_STATE_LAYER_MOD_HASH,
+            NFT_METADATA_UPDATER.get_tree_hash(),
+            NFT_OWNERSHIP_LAYER_HASH,
+            NFT_TRANSFER_PROGRAM_DEFAULT.get_tree_hash(),
+            creator_public_key,
+        )
+        pre_launcher_target = Target(pre_launcher_puzzle.get_tree_hash(), uint64(1))
+        targets.append(pre_launcher_target)
+        mint_spends[pre_launcher_puzzle.get_tree_hash()] = DynamicMintSpends(
+            pre_launcher_puzzle,
+            creator_public_key,
         )
 
     return targets, mint_spends
